@@ -104,17 +104,26 @@ def get_dealerships(request, state="All"):
 
 # Create a `get_dealer_reviews` view to render the reviews of a dealer
 def get_dealer_reviews(request, dealer_id):
-    # if dealer id has been provided
-    if(dealer_id):
-        endpoint = "/fetchReviews/dealer/"+str(dealer_id)
+    if dealer_id:
+        endpoint = f"/fetchReviews/dealer/{dealer_id}"
         reviews = get_request(endpoint)
-        for review_detail in reviews:
-            response = analyze_review_sentiments(review_detail['review'])
-            print(response)
-            review_detail['sentiment'] = response['sentiment']
-        return JsonResponse({"status":200,"reviews":reviews})
+
+        if reviews is not None:
+            for review_detail in reviews:
+                # Call the sentiment analyzer
+                response = analyze_review_sentiments(review_detail['review'])
+                
+                # --- This is the crucial fix ---
+                # Check if the response is valid before using it
+                if response and response.get('sentiment'):
+                    review_detail['sentiment'] = response['sentiment']
+                else:
+                    # Set a default sentiment if the analyzer fails
+                    review_detail['sentiment'] = 'neutral'
+        
+        return JsonResponse({"status": 200, "reviews": reviews})
     else:
-        return JsonResponse({"status":400,"message":"Bad Request"})
+        return JsonResponse({"status": 400, "message": "Bad Request"})
 
 # Create a `get_dealer_details` view to render the dealer details
 def get_dealer_details(request, dealer_id):
@@ -127,13 +136,20 @@ def get_dealer_details(request, dealer_id):
 
 # Create a `add_review` view to submit a review
 # def add_review(request):
+# In /server/djangoapp/views.py
+
 def add_review(request):
-    if(request.user.is_anonymous == False):
-        data = json.loads(request.body)
+    if not request.user.is_anonymous:
         try:
+            # Load the review data from the request
+            data = json.loads(request.body)
+            # Add the current username to the data
+            data['name'] = request.user.username
+            # Post the review
             response = post_review(data)
-            return JsonResponse({"status":200})
-        except:
-            return JsonResponse({"status":401,"message":"Error in posting review"})
+            return JsonResponse({"status": 200})
+        except Exception as e:
+            return JsonResponse({"status": 401, "message": f"Error in posting review: {e}"})
     else:
+        return JsonResponse({"status": 403, "message": "Unauthorized"})
         return JsonResponse({"status":403,"message":"Unauthorized"})
